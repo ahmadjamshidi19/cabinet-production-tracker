@@ -1,0 +1,13 @@
+# Normalize line endings: LF everywhere (prevents CRLF issues between Windows and Docker)
+* text=auto eol=lf
+
+# Shell scripts must always be LF, otherwise containers fail with "bad interpreter"
+*.sh text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
