@@ -101,8 +101,9 @@ erDiagram
         string name
         string email UK
         string password
-        string role "admin | planner | installer"
-        timestamps timestamps
+        string role
+        timestamp created_at
+        timestamp updated_at
     }
 
     orders {
@@ -110,25 +111,27 @@ erDiagram
         string customer_name
         string address
         bigint created_by FK
-        timestamps timestamps
+        timestamp created_at
+        timestamp updated_at
     }
 
     production_jobs {
         bigint id PK
         bigint order_id FK
-        bigint installer_id FK "nullable"
+        bigint installer_id FK
         string title
-        string status "CHECK constraint"
-        timestamps timestamps
+        string status
+        timestamp created_at
+        timestamp updated_at
     }
 
     job_status_histories {
         bigint id PK
         bigint job_id FK
         bigint changed_by FK
-        string from_status "nullable"
+        string from_status
         string to_status
-        timestamp created_at "no updated_at"
+        timestamp created_at
     }
 ```
 
