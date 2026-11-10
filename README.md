@@ -56,3 +56,15 @@ Out of scope (by design): frontend, login page, file uploads.
 ## Not done and why
 
 To be filled in before submission.
+
+## Demo users
+
+The database is seeded with fake data on startup. Every demo account uses the
+password `password`.
+
+| Role      | Email                  |
+|-----------|------------------------|
+| admin     | admin@example.com      |
+| planner   | planner@example.com    |
+| installer | installer1@example.com |
+| installer | installer2@example.com |
