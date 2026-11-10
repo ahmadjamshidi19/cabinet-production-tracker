@@ -126,3 +126,83 @@ curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$BASE/jobs/3/status" \
 curl -s -X PATCH "$BASE/jobs/5/status" -H "Authorization: Bearer $PLANNER" \
   -H 'Content-Type: application/json' -d '{"status":"pending"}'
 ```
+
+## Design
+
+The full design, written before the implementation, is in
+[docs/design.md](docs/design.md). The essentials are below.
+
+### Job status machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending
+    pending --> cutting
+    cutting --> edge_banding
+    edge_banding --> assembly
+    assembly --> ready_for_install
+    ready_for_install --> installed
+    installed --> [*]
+```
+
+The flow is strictly linear and forward-only. Skipping a step, moving backwards
+and moving to the current status are all rejected with `422`.
+
+### Roles and access
+
+| Transition                         | admin | planner | installer               |
+|------------------------------------|:-----:|:-------:|:-----------------------:|
+| `pending` → `cutting`              | yes   | yes     | no (403)                |
+| `cutting` → `edge_banding`         | yes   | yes     | no (403)                |
+| `edge_banding` → `assembly`        | yes   | yes     | no (403)                |
+| `assembly` → `ready_for_install`   | yes   | yes     | no (403)                |
+| `ready_for_install` → `installed`  | yes   | yes     | own jobs only           |
+
+| Action               | admin | planner | installer                        |
+|----------------------|:-----:|:-------:|:--------------------------------:|
+| Create order or job  | yes   | yes     | no (403)                         |
+| List or view orders  | yes   | yes     | no (403)                         |
+| List jobs            | all   | all     | only their own                   |
+| Another installer's job | visible | visible | 404                          |
+
+A status change is checked in this order: token (401), job lookup through the
+visibility scope (404), request body (422), role and ownership policy (403),
+transition validity inside the transaction (422). Authorization comes before
+transition validity on purpose: a caller who may not perform a step learns
+nothing about the state machine, and forbidden requests never wait for a lock.
+
+### Data model
+
+| Table                  | Notes                                                                  |
+|------------------------|------------------------------------------------------------------------|
+| `users`                | `role` (`admin`, `planner`, `installer`) with a CHECK constraint       |
+| `orders`               | customer, address, `created_by`; no status column (see decisions)      |
+| `production_jobs`      | `order_id`, nullable `installer_id`, `title`, `status` with a CHECK    |
+| `job_status_histories` | append-only: `job_id`, `changed_by`, `from_status`, `to_status`, `created_at` |
+
+The ER diagram is in [docs/design.md](docs/design.md). Foreign keys declare
+their `ON DELETE` behaviour explicitly, and PostgreSQL does not index foreign
+key columns by itself, so the indexes are created by hand:
+
+| Index                                       | Reason                                               |
+|---------------------------------------------|------------------------------------------------------|
+| `production_jobs (order_id)`                | Load the jobs of an order                            |
+| `production_jobs (installer_id, status)`    | An installer's job list, optionally filtered         |
+| `production_jobs (status)`                  | Status filter for planners and admins                |
+| `job_status_histories (job_id, created_at)` | Read the history of one job in order                 |
+| `orders (created_by)`                       | Foreign key lookup                                   |
+
+### Key decisions
+
+| Decision | Why |
+|----------|-----|
+| Order status is derived from its jobs and never stored. No jobs or all `pending` gives `pending`, all `installed` gives `installed`, anything else gives `in_progress`. | A stored value can drift from the jobs. Deriving it keeps one source of truth. Lists eager load only the three job columns needed, so there is no N+1. |
+| Transition rules live in the `JobStatus` enum (`allowedTransitions()`, `canTransitionTo()`). | One place to read and change them, no scattered `if` statements, and the enum is a plain class that is easy to unit test. |
+| `TransitionJobStatus` runs in a transaction and locks the job row with `lockForUpdate()`. | Two concurrent requests could both validate against the same status and write two history rows that do not form a chain. With the lock the second request waits and validates again against the new status. The status change and its history row commit together. |
+| A job of another installer returns 404, not 403. Order endpoints return 403 for installers. | A 403 confirms that the job exists. Jobs are hidden resources, orders are not. Hiding is done by one `visibleTo` query scope plus a scoped route binding, so it cannot be forgotten in a controller. |
+| Invalid transitions and invalid filters return 422. | The request is well formed but cannot be applied. The error body has the same shape as a validation error, so clients handle one format. |
+| The table is called `production_jobs`. | Laravel's database queue already owns a table called `jobs`. |
+| The database guards its own rules: CHECK constraints on status and role, foreign keys, and no `updated_at` on the history table. | Invalid data is rejected even if it bypasses PHP validation. |
+| The actor in the history comes from the authenticated user. `role`, `status` and `created_by` are not mass assignable, and a `status` sent when creating a job is ignored. | A request body can never claim who made a change, set a role or skip the state machine. `installer_id` must reference a user whose role is `installer`. |
+| Sanctum bearer tokens, with every `/api` error rendered as JSON. | Simple and enough for an API without a login page. Without the JSON rule, an unauthenticated request lacking an `Accept` header would be redirected to a login route that does not exist. |
+| Tests run against real PostgreSQL, in a separate `app_testing` database. | CHECK constraints and row locks behave differently on SQLite. |
