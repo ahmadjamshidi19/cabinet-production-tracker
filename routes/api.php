@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\JobStatusController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OrderJobController;
 use App\Http\Controllers\Api\ProductionJobController;
@@ -16,4 +17,5 @@ Route::middleware('auth:sanctum')->group(function (): void {
     Route::apiResource('orders', OrderController::class)->only(['index', 'store']);
     Route::apiResource('orders.jobs', OrderJobController::class)->only(['index', 'store']);
     Route::get('/jobs', [ProductionJobController::class, 'index']);
+    Route::patch('/jobs/{job}/status', JobStatusController::class);
 });
