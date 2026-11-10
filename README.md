@@ -206,3 +206,66 @@ key columns by itself, so the indexes are created by hand:
 | The actor in the history comes from the authenticated user. `role`, `status` and `created_by` are not mass assignable, and a `status` sent when creating a job is ignored. | A request body can never claim who made a change, set a role or skip the state machine. `installer_id` must reference a user whose role is `installer`. |
 | Sanctum bearer tokens, with every `/api` error rendered as JSON. | Simple and enough for an API without a login page. Without the JSON rule, an unauthenticated request lacking an `Accept` header would be redirected to a login route that does not exist. |
 | Tests run against real PostgreSQL, in a separate `app_testing` database. | CHECK constraints and row locks behave differently on SQLite. |
+
+
+## Testing and quality
+
+```bash
+docker compose exec app php artisan test
+docker compose exec app ./vendor/bin/pint --test
+docker compose exec app ./vendor/bin/phpstan analyse --memory-limit=1G
+```
+
+The suite has 30 tests (feature tests plus one unit test with data sets). It
+covers:
+
+- allowed transitions and the history row (who, from, to)
+- invalid transitions (backwards, skipped step, same status) leaving the job and
+  its history untouched
+- installers seeing only their own jobs and getting 404 for someone else's job
+- installers unable to perform production steps or to create orders and jobs
+- planners creating orders and jobs, and `status` in a job body being ignored
+- status filter validation and pagination, including the `per_page` limit
+- missing or invalid tokens returning 401 with a JSON body
+- derived order status
+- that a transition takes a `FOR UPDATE` lock
+
+Tests use a dedicated database, `app_testing`, created by
+`docker/postgres/init.sql`. It is forced through both environment and server
+variables in `phpunit.xml`, because the container's own `DB_DATABASE` reaches
+Laravel through `$_SERVER`. `tests/TestCase.php` also aborts before touching
+any other database, so the suite cannot wipe the development data.
+
+GitHub Actions runs Pint, Larastan (level 6) and the test suite against a
+PostgreSQL 17 service on every pull request and on pushes to `main`.
+
+### Where to look
+
+| Path | What it holds |
+|------|---------------|
+| `app/Enums/JobStatus.php` | Statuses and allowed transitions |
+| `app/Actions/TransitionJobStatus.php` | Transition inside a transaction with a row lock |
+| `app/Policies/` | Role and ownership rules |
+| `app/Models/ProductionJob.php` | `visibleTo` scope and enum casts |
+| `app/Http/` | Thin controllers, form requests and API resources |
+| `database/migrations/` | Schema with foreign keys, CHECK constraints and indexes |
+| `database/seeders/DemoSeeder.php` | Idempotent demo data with consistent history |
+| `docs/design.md` | Design document written before the code |
+
+## What is not done, and why
+
+The time was limited, so I kept the required scope small and clean instead of
+adding features.
+
+| Not done | Why, and what I would do |
+|----------|--------------------------|
+| Notification when a job becomes `ready_for_install` (optional) | Skipped for time. I would dispatch an event after commit and handle it in a queued listener on the `database` queue, with a separate worker service in Compose. |
+| Jobs-per-status report (optional) | Skipped for time. I would add a `GROUP BY status` endpoint and keep the `(status)` index. On a table this small PostgreSQL will choose a sequential scan, so I would document `EXPLAIN ANALYZE` and say the index pays off only at a larger scale. |
+| Real concurrency test | The lock is verified by asserting that the transition issues `FOR UPDATE`, not by running parallel connections. A parallel test would be the next step. |
+| Rate limiting on `/api/tokens`, token expiry and revocation | Out of scope for the exercise. In a real project I would add throttling, an expiry and a logout endpoint. |
+| User management | The exercise did not ask for it. Users come from the seeder. |
+| History row when a job is created | History records status changes only. `from_status` is nullable so a creation event can be added without a migration. |
+| Production container | The Compose file is a development setup: `artisan serve`, a bind mount, and demo seeding on every start. For production I would build an image with php-fpm and nginx and no bind mount, and seed nothing. |
+| CORS | Left at the framework defaults. I would restrict the allowed origins to the real frontend. |
+| API documentation | The curl examples above stand in for an OpenAPI file. |
+| Default Laravel welcome page | The skeleton page is still served at `/`. It is not part of the API. |
