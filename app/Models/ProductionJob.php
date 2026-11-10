@@ -81,4 +81,16 @@ class ProductionJob extends Model
             $query->where('installer_id', $user->id);
         }
     }
+
+    /**
+     * Narrows the query to one status. A null status leaves the query untouched.
+     *
+     * @param  Builder<ProductionJob>  $query
+     */
+    public function scopeOfStatus(Builder $query, ?JobStatus $status): void
+    {
+        if ($status !== null) {
+            $query->where('status', $status->value);
+        }
+    }
 }
