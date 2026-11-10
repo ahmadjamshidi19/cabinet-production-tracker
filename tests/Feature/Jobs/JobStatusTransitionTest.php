@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class JobStatusTransitionTest extends TestCase
@@ -119,5 +120,32 @@ class JobStatusTransitionTest extends TestCase
             ->filter(fn (array $entry): bool => str_contains(strtolower($entry['query']), 'for update'));
 
         $this->assertCount(1, $lockingQueries);
+    }
+
+    #[DataProvider('invalidTransitions')]
+    public function test_invalid_transitions_are_rejected(JobStatus $current, JobStatus $target): void
+    {
+        $job = ProductionJob::factory()->withStatus($current)->create();
+
+        Sanctum::actingAs(User::factory()->planner()->create());
+
+        $this->patchJson("/api/jobs/{$job->id}/status", ['status' => $target->value])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
+
+        $this->assertSame($current, $job->fresh()->status);
+        $this->assertDatabaseCount('job_status_histories', 0);
+    }
+
+    /**
+     * @return array<string, array{JobStatus, JobStatus}>
+     */
+    public static function invalidTransitions(): array
+    {
+        return [
+            'same status' => [JobStatus::Cutting, JobStatus::Cutting],
+            'skipping a step' => [JobStatus::Pending, JobStatus::Assembly],
+            'moving backwards' => [JobStatus::Assembly, JobStatus::Cutting],
+        ];
     }
 }
