@@ -71,4 +71,31 @@ class ProductionJobApiTest extends TestCase
 
         $this->assertDatabaseCount('production_jobs', 1);
     }
+
+    public function test_job_list_is_paginated(): void
+    {
+        ProductionJob::factory()->count(5)->create();
+
+        Sanctum::actingAs(User::factory()->planner()->create());
+
+        $this->getJson('/api/jobs?per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.per_page', 2)
+            ->assertJsonPath('meta.total', 5)
+            ->assertJsonPath('meta.last_page', 3);
+
+        $this->getJson('/api/jobs?per_page=2&page=3')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
+    }
+
+    public function test_per_page_above_the_limit_is_rejected(): void
+    {
+        Sanctum::actingAs(User::factory()->planner()->create());
+
+        $this->getJson('/api/jobs?per_page=101')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('per_page');
+    }
 }
