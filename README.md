@@ -269,3 +269,73 @@ adding features.
 | CORS | Left at the framework defaults. I would restrict the allowed origins to the real frontend. |
 | API documentation | The curl examples above stand in for an OpenAPI file. |
 | Default Laravel welcome page | The skeleton page is still served at `/`. It is not part of the API. |
+
+## Future improvements
+
+The current design is deliberately small: three fixed roles, one linear flow
+and one database. The ideas below are where I would go next. For each library
+I say what it would solve and why I did not add it now, because a package
+should earn its place.
+
+### Libraries worth adding when the need appears
+
+| Library | What it would give | Why not now |
+|---------|--------------------|-------------|
+| [spatie/laravel-permission](https://github.com/spatie/laravel-permission) | Roles and permissions stored in the database, for example `jobs.transition.install`, so an admin can edit what a role may do | Three fixed roles map cleanly to a backed enum and two small policies. A permission schema, a cache and extra tables would move the rules from reviewable code into data. I would adopt it when roles become configurable or more roles appear. |
+| [spatie/laravel-model-states](https://github.com/spatie/laravel-model-states) | A class per state, transition classes, guarded transitions and side effects tied to a transition | A single forward-only flow fits an enum with `allowedTransitions()`. I would adopt it when the flow branches (rework loops, on hold, cancelled) or states carry behaviour. The row lock and the history row would stay in the same transactional action. |
+| [spatie/laravel-activitylog](https://github.com/spatie/laravel-activitylog) | A generic audit trail for any model change, such as a renamed job or a reassigned installer | The history table already gives the required trail of status changes. This would cover everything else. |
+| [spatie/laravel-query-builder](https://github.com/spatie/laravel-query-builder) | Filtering, sorting and includes from the query string, with an allow list | One status filter does not need it. It pays off once planners filter by installer, date range and customer. |
+| [spatie/laravel-data](https://github.com/spatie/laravel-data) | Typed data objects shared by requests, actions and resources | Form requests and resources are enough at this size. |
+| Redis with Laravel Horizon | Fast queues with monitoring and retries | The `database` queue is enough for one notification type, and Redis adds infrastructure. I would switch when queue volume or monitoring needs grow. |
+
+### Architecture and design patterns
+
+- **Domain-oriented structure.** Group code by domain (orders, production,
+  identity) instead of by technical layer once the codebase grows. Actions
+  stay the unit of business logic.
+- **Domain events.** Dispatch `JobStatusChanged` after commit. Notifications,
+  metrics and webhooks become independent listeners. If delivery must be
+  guaranteed, add a transactional outbox table.
+- **Idempotency keys** on `POST` and `PATCH`, so a request retried after a
+  network failure is applied once. This matters most for mobile clients.
+- **Optimistic concurrency** (a version column or ETags) for editable fields
+  such as a job title or an installer assignment. Status changes are already
+  protected by the row lock.
+- **Read models for reporting.** Use a database view or a counter table when
+  report queries get heavy, instead of growing the write model.
+- **API versioning** (`/api/v1`) and a generated OpenAPI document (for example
+  with Scramble), so clients and docs follow the code.
+- **Structured logging with request IDs** and metrics for the transition
+  endpoint.
+- **What I would not add:** a repository layer over Eloquent or an event-sourced
+  history. At this scale they add code without adding safety.
+
+### Product features
+
+- **Ready-for-install notification** through a queued listener, sent by email,
+  SMS or push. This is the optional item from the exercise.
+- **Offline-first installer app** (for example with Capacitor): status changes
+  are queued on the device and synced later with idempotency keys. The server
+  state machine always wins on conflict.
+- **Live planner board** with a Kanban view by status, updated in real time
+  (Laravel Reverb and WebSockets).
+- **Site floorplan view.** An interactive SVG of the installation site per
+  order, where installers mark each cabinet as installed.
+- **QR labels per job**, scanned at each workshop station to change status in
+  one tap.
+- **Production metrics:** time spent in each stage, bottleneck detection, late
+  job alerts and the jobs-per-status report.
+- **Controlled rework loop:** a backward transition (for example assembly to
+  edge banding) that needs a reason and is recorded in the history.
+- **Photos and customer sign-off** at installation (file storage such as S3).
+- **A read-only customer link** that shows the progress of an order.
+- **AI assistance, with a human deciding:** flag jobs stuck longer than
+  usual, suggest an installer from workload and location, and search orders in
+  natural language.
+
+### Suggested order
+
+1. Notifications with a worker service (small, and it proves the event design).
+2. The jobs-per-status report and stage metrics.
+3. The rework loop, together with `laravel-model-states` if the flow starts to branch.
+4. The offline-first installer app with idempotency keys.
