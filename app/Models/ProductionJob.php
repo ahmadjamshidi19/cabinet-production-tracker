@@ -11,6 +11,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property JobStatus $status
+ */
 class ProductionJob extends Model
 {
     /** @use HasFactory<ProductionJobFactory> */

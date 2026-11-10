@@ -8,6 +8,10 @@ use App\Enums\JobStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property JobStatus|null $from_status
+ * @property JobStatus $to_status
+ */
 class JobStatusHistory extends Model
 {
     /** Append-only table: there is no updated_at column. */
