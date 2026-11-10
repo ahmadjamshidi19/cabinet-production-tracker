@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\JobStatus;
+use App\Enums\UserRole;
 use Database\Factories\ProductionJobFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -66,5 +68,17 @@ class ProductionJob extends Model
     public function histories(): HasMany
     {
         return $this->hasMany(JobStatusHistory::class, 'job_id');
+    }
+
+    /**
+     * Installers only see jobs assigned to them; other roles see everything.
+     *
+     * @param  Builder<ProductionJob>  $query
+     */
+    public function scopeVisibleTo(Builder $query, User $user): void
+    {
+        if ($user->role === UserRole::Installer) {
+            $query->where('installer_id', $user->id);
+        }
     }
 }

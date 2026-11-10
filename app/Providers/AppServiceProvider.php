@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\ProductionJob;
+use App\Models\User;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +23,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        Route::bind('job', function (string $value): ProductionJob {
+            $user = request()->user();
+
+            if (! $user instanceof User) {
+                throw new AuthenticationException;
+            }
+
+            return ProductionJob::visibleTo($user)->findOrFail($value);
+        });
     }
 }
