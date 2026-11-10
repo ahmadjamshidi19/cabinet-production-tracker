@@ -144,8 +144,9 @@ erDiagram
   values are rejected even if they bypass PHP validation.
 - **`job_status_histories`** is append-only: no `updated_at`, and the
   application never updates or deletes rows.
-- **`from_status` is nullable** to allow recording the initial creation of a
-  job (no previous status).
+- **`from_status` is nullable** so that a future "job created" event can be
+  recorded without a previous status. Today only status transitions are
+  recorded, so the column is always filled. Creating a job writes no history row.
 - **`orders.status` is not stored** (see decision D1).
 
 ### 4.2 Foreign keys
@@ -185,6 +186,7 @@ PostgreSQL does not create indexes on foreign key columns automatically.
 | D9 | Installer visibility is a query scope (`visibleTo`) | Applied in one place so it cannot be forgotten. |
 | D10 | Authentication with Laravel Sanctum tokens | Simple and sufficient for an API without a login UI. |
 | D11 | Tests run against real PostgreSQL | `CHECK` constraints and row locks behave differently on SQLite. |
+| D12 | `users.role` defaults to `installer`; `role`, `status` and `created_by` are not mass assignable | Least privilege: forgetting a role grants nothing, and no request body can set a role, a status or an owner. |
 
 ### 5.1 Derived order status
 
