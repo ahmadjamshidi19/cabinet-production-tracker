@@ -14,5 +14,5 @@ until pg_isready -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USERNAME" >/dev/nul
   sleep 1
 done
 
-php artisan migrate --force
+php artisan migrate --seed --force
 exec "$@"
