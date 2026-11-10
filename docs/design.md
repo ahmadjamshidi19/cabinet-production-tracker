@@ -200,13 +200,20 @@ An order's status is computed from its jobs:
 
 `PATCH /api/jobs/{job}/status` with body `{ "status": "assembly" }`.
 
-Steps (all inside one transaction):
+Steps:
 
 1. Resolve the job through the `visibleTo` scope (other installers get 404).
-2. Lock the job row with `lockForUpdate()`.
-3. Check that the transition is allowed by the enum (otherwise 422).
-4. Check that the actor's role may perform it (otherwise 403).
-5. Update the status and insert a history row.
+2. Validate the body: `status` must be a known value (otherwise 422).
+3. Authorize through the job policy: role, ownership and the step this role
+   may perform (otherwise 403). This runs before any lock is taken.
+4. Inside one transaction, lock the job row with `lockForUpdate()`.
+5. Check that the transition is allowed by the enum (otherwise 422).
+   Moving to the current status is also rejected here.
+6. Update the status and insert a history row in the same transaction.
+
+Authorization is checked before transition validity on purpose: a caller who
+may not perform the step learns nothing about the job's state machine, and
+forbidden requests never wait for a row lock.
 
 ## 6. API Overview
 
